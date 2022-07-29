@@ -1,56 +1,92 @@
 package com.example.demoselectfilestorage
 
-import android.content.ContentUris
-import android.content.Context
+import android.app.RecoverableSecurityException
 import android.content.pm.PackageManager
-import android.database.Cursor
+import android.media.MediaScannerConnection
+import android.media.MediaScannerConnection.OnScanCompletedListener
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import android.widget.Toast
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.RecyclerView
 import com.example.demoselectfilestorage.adapter.MyAdapter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 
 class ListActivity : AppCompatActivity() {
     private val rcvMain: RecyclerView by lazy { findViewById<RecyclerView>(R.id.rcvMain) }
+    private lateinit var intentSenderRequest: ActivityResultLauncher<IntentSenderRequest>
     private lateinit var mAdapter: MyAdapter
     lateinit var pkgManager: PackageManager
+    private lateinit var deletedUriImage: Uri
+    private var mList: MutableList<File> = mutableListOf()
+
+    @RequiresApi(Build.VERSION_CODES.Q)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_list)
         pkgManager = packageManager
-        val path = Environment.getExternalStorageDirectory().toString()
+        val path = Environment.getExternalStorageDirectory().toString() + "/Download"
+//        val path = Environment.getExternalStorageDirectory().toString()
         Log.e("TAG", "onCreate: $path")
-        val list = listFoldersAndFilesFromSDCard("$path")
-//        for (i in 0 until list!!.size) {
-//
-//            Log.e("list $i", "${list[i]}")
-//        }
-        mAdapter = list?.let { MyAdapter(it) }!!
+        mList = listFoldersAndFilesFromSDCard("$path")
 
+        mAdapter = MyAdapter(mList!!) {
+            MediaScannerConnection.scanFile(this@ListActivity, arrayOf(it.absolutePath), null, OnScanCompletedListener { s, uri ->
+                lifecycleScope.launch {
+                    // android 11 and above
+                    if (Build.VERSION_CODES.Q <= Build.VERSION.SDK_INT) {
+                        deletePhotoFromExternalStorage(uri)
+                        deletedUriImage = uri
+                    } else {
+                        // 10
+                        it.delete()
+                    }
+                }
+            })
+        }
+
+        Log.e("count", "${mList.size}")
         rcvMain.apply {
             addItemDecoration(DividerItemDecoration(this@ListActivity, DividerItemDecoration.VERTICAL))
             adapter = mAdapter
         }
+        intentSenderRequest = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
+            if (it.resultCode == RESULT_OK) {
+                if (Build.VERSION_CODES.Q == Build.VERSION.SDK_INT) {
+                    lifecycleScope.launch {
+                        deletePhotoFromExternalStorage(deletedUriImage)
+                    }
+                }
+                Toast.makeText(this, "Delete saved successfully", Toast.LENGTH_SHORT).show()
+            } else Toast.makeText(this, "Delete saved failure", Toast.LENGTH_SHORT).show()
+        }
 
     }
 
-    fun listFoldersAndFilesFromSDCard(path: String?): ArrayList<File>? {
-        val arrayListFolders = ArrayList<File>()
+    private fun listFoldersAndFilesFromSDCard(path: String?): MutableList<File> {
+        val arrayListFolders: MutableList<File> = mutableListOf()
         try {
             val dir = File(path).listFiles()
-            // here dir will give you list of folder/file in hierarchy
-            if (null != dir && dir.size > 0) {
+            if (null != dir && dir.isNotEmpty()) {
                 for (i in dir.indices) {
-                    if (dir[i].isDirectory) {
-                        val mFile = File(dir[i].toString())
-                        arrayListFolders.add(mFile)
-                        // Here you can call recursively this function for file/folder hierarchy
+                    if (dir[i].isFile) {
+                    val mFile = File(dir[i].toString())
+                    arrayListFolders.add(mFile)
+                    // Here you can call recursively this function for file/folder hierarchy
                     } else {
                         // do what ever you want with files
                     }
@@ -61,29 +97,28 @@ class ListActivity : AppCompatActivity() {
         }
         return arrayListFolders
     }
-//
-//    private fun loadAudio(context: Context): List<AudioModel>? {
-//        val tempList: MutableList<AudioModel> = ArrayList<AudioModel>()
-//        val uri = MediaStore.Downloads.EXTERNAL_CONTENT_URI
-//        val cursor: Cursor = context.getContentResolver().query(uri, projection, null, null, null)
-//        if (cursor.count > 0) {
-//            while (cursor.moveToNext()) {
-//                val albumID = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Audio.AudioColumns.ALBUM_ID))
-//                val imgPath = Uri.parse("content://media/external/audio/albumart")
-//                val imgParse = ContentUris.withAppendedId(imgPath, albumID)
-//                tempList.add(
-//                    AudioModel(
-//                        cursor.getString(cursor.getColumnIndex(MediaStore.Audio.AudioColumns.TITLE)),
-//                        cursor.getString(cursor.getColumnIndex(MediaStore.Audio.Media.ARTIST)),
-//                        cursor.getString(cursor.getColumnIndex(MediaStore.Audio.Media._ID)),
-//                        cursor.getString(cursor.getColumnIndex(MediaStore.Audio.AudioColumns.DATA)),
-//                        cursor.getString(cursor.getColumnIndex(MediaStore.Audio.AudioColumns.DURATION)),
-//                        imgParse.toString()
-//                    )
-//                )
-//            }
-//            cursor.close()
-//        }
-//        return tempList
-//    }
+
+    private suspend fun deletePhotoFromExternalStorage(contentUri: Uri) {
+        Log.e("uri", "$contentUri")
+        return withContext(Dispatchers.IO) {
+            try {
+                contentResolver.delete(contentUri, null, null)
+            } catch (e: SecurityException) {
+                val intentSender = when {
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                        MediaStore.createDeleteRequest(contentResolver, listOf(contentUri)).intentSender
+                    }
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> {
+                        val recoverableSecurityException = e as? RecoverableSecurityException
+                        recoverableSecurityException?.userAction?.actionIntent?.intentSender
+                    }
+                    else -> null
+                }
+                intentSender?.let {
+                    intentSenderRequest.launch(IntentSenderRequest.Builder(it).build())
+                }
+            }
+        }
+    }
+
 }
