@@ -13,6 +13,7 @@ import androidx.core.app.ActivityCompat
 class MainActivity : AppCompatActivity() {
     private val button: Button by lazy { findViewById<Button>(R.id.button) }
     private val button2: Button by lazy { findViewById<Button>(R.id.button2) }
+    private val button3: Button by lazy { findViewById<Button>(R.id.button3) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -24,11 +25,17 @@ class MainActivity : AppCompatActivity() {
             }else{
                 requestReadAndWriteStorage(this)
             }
-
         }
 
-
         button2.setOnClickListener {
+            if (checkPermissionForReadAndWriteStorage(this)){
+                startActivity(Intent(this,SelectReadImageActivity::class.java))
+            }else{
+                requestReadAndWriteStorage(this)
+            }
+        }
+
+        button3.setOnClickListener {
             if (checkPermissionForReadAndWriteStorage(this)){
                 startActivity(Intent(this,SelectReadImageActivity::class.java))
             }else{
