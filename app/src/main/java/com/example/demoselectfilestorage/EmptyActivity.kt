@@ -53,10 +53,9 @@ class EmptyActivity : AppCompatActivity() {
             val dir = File(path).listFiles()
             if (null != dir && dir.isNotEmpty()) {
                 for (i in dir.indices) {
-                    if (dir[i].isDirectory) {
+                    if (dir[i].isDirectory  && dir.size==0) {
                         val mFile = File(dir[i].toString())
-                        if (mFile.listFiles().size==0)
-                            arrayListFolders.add(mFile)
+                        arrayListFolders.add(mFile)
                         // Here you can call recursively this function for file/folder hierarchy
                     } else {
                         // do what ever you want with files
