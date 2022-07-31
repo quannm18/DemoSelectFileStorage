@@ -1,9 +1,7 @@
 package com.example.demoselectfilestorage
 
 import android.app.RecoverableSecurityException
-import android.content.pm.PackageManager
 import android.media.MediaScannerConnection
-import android.media.MediaScannerConnection.OnScanCompletedListener
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -14,10 +12,11 @@ import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.graphics.TypefaceCompatUtil.getTempFile
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.DividerItemDecoration
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.demoselectfilestorage.adapter.MyAdapter
 import kotlinx.coroutines.Dispatchers
@@ -25,68 +24,65 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+class EmptyActivity : AppCompatActivity() {
+    private val rcvEmpty: RecyclerView by lazy { findViewById<RecyclerView>(R.id.rcvEmpty) }
 
-class ListActivity : AppCompatActivity() {
-    private val rcvMain: RecyclerView by lazy { findViewById<RecyclerView>(R.id.rcvMain) }
     private lateinit var intentSenderRequest: ActivityResultLauncher<IntentSenderRequest>
     private lateinit var mAdapter: MyAdapter
-    lateinit var pkgManager: PackageManager
-    private lateinit var deletedUriImage: Uri
-    private var mList: MutableList<File> = mutableListOf()
-
-    @RequiresApi(Build.VERSION_CODES.Q)
+    private lateinit var deletedUriImage:Uri
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_list)
-        pkgManager = packageManager
-        val path = Environment.getExternalStorageDirectory().toString()+"/"
-//        val path = Environment.getExternalStorageDirectory().toString()
-        Log.e("TAG", "onCreate: $path")
-        mList = listFoldersAndFilesFromSDCard("$path")
-
-        mAdapter = MyAdapter(mList!!) {
-            MediaScannerConnection.scanFile(this@ListActivity, arrayOf(it.absolutePath), null, OnScanCompletedListener { s, uri ->
-                lifecycleScope.launch {
-                    // android 11 and above
-                    if (Build.VERSION_CODES.Q <= Build.VERSION.SDK_INT) {
-                        deletePhotoFromExternalStorage(uri)
-                        deletedUriImage = uri
-                    } else {
-                        // 10
-                        it.delete()
+        setContentView(R.layout.activity_empty)
+        val path = Environment.getExternalStorageDirectory().toString()
+        val mList = selectEmptyFolderList(path)
+        getTempFile()
+        mAdapter = MyAdapter(mList) {
+            if (Build.VERSION_CODES.Q <= Build.VERSION.SDK_INT) {
+                MediaScannerConnection.scanFile(this, arrayOf(it.absolutePath), null, MediaScannerConnection.OnScanCompletedListener { s, uri ->
+                    lifecycleScope.launch {
+                        // android 11 and above
+                        if (Build.VERSION_CODES.Q <= Build.VERSION.SDK_INT) {
+                            deletePhotoFromExternalStorage(uri)
+                            deletedUriImage = uri
+                        } else {
+                            // 10
+                            it.delete()
+                        }
                     }
-                }
-            })
+                })
+            } else {
+                it.delete()
+            }
         }
-
-        Log.e("count", "${mList.size}")
-        rcvMain.apply {
-            addItemDecoration(DividerItemDecoration(this@ListActivity, DividerItemDecoration.VERTICAL))
+        rcvEmpty.apply {
+            layoutManager = LinearLayoutManager(this@EmptyActivity)
             adapter = mAdapter
+            addItemDecoration(DividerItemDecoration(this@EmptyActivity, DividerItemDecoration.VERTICAL))
         }
-        intentSenderRequest = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
-            if (it.resultCode == RESULT_OK) {
-                if (Build.VERSION_CODES.Q == Build.VERSION.SDK_INT) {
+        intentSenderRequest = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()){
+            if(it.resultCode== RESULT_OK){
+                if(Build.VERSION_CODES.Q==Build.VERSION.SDK_INT){
                     lifecycleScope.launch {
                         deletePhotoFromExternalStorage(deletedUriImage)
                     }
                 }
-                Toast.makeText(this, "Delete saved successfully", Toast.LENGTH_SHORT).show()
-            } else Toast.makeText(this, "Delete saved failure", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@EmptyActivity, "Delete saved successfully", Toast.LENGTH_SHORT).show()
+            } else Toast.makeText(this@EmptyActivity, "Delete saved failure", Toast.LENGTH_SHORT).show()
         }
-
     }
 
-    private fun listFoldersAndFilesFromSDCard(path: String?): MutableList<File> {
+    private fun selectEmptyFolderList(path: String?): MutableList<File> {
         val arrayListFolders: MutableList<File> = mutableListOf()
         try {
             val dir = File(path).listFiles()
             if (null != dir && dir.isNotEmpty()) {
                 for (i in dir.indices) {
                     if (dir[i].isDirectory) {
-                    val mFile = File(dir[i].toString())
-                    arrayListFolders.add(mFile)
-                    // Here you can call recursively this function for file/folder hierarchy
+                        val mFile = File(dir[i].toString())
+                        if (mFile.listFiles().isEmpty()){
+                            arrayListFolders.add(mFile)
+                        }
+                        // Here you can call recursively this function for file/folder hierarchy
                     } else {
                         // do what ever you want with files
                     }
@@ -96,6 +92,10 @@ class ListActivity : AppCompatActivity() {
             e.printStackTrace()
         }
         return arrayListFolders
+    }
+    fun getTempFile() {
+        val mFile = cacheDir
+        Log.e("TAG", "getTempFile: ${mFile.parentFile}", )
     }
 
     private suspend fun deletePhotoFromExternalStorage(contentUri: Uri) {
