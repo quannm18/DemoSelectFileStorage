@@ -1,13 +1,17 @@
 package com.example.demoselectfilestorage
 
+import android.annotation.SuppressLint
+import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.DividerItemDecoration
@@ -20,6 +24,7 @@ class ListActivity : AppCompatActivity() {
     private val rcvMain: RecyclerView by lazy { findViewById<RecyclerView>(R.id.rcvMain) }
     private lateinit var mAdapter: MyAdapter
     lateinit var pkgManager: PackageManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_list)
@@ -61,29 +66,30 @@ class ListActivity : AppCompatActivity() {
         }
         return arrayListFolders
     }
-//
-//    private fun loadAudio(context: Context): List<AudioModel>? {
-//        val tempList: MutableList<AudioModel> = ArrayList<AudioModel>()
-//        val uri = MediaStore.Downloads.EXTERNAL_CONTENT_URI
-//        val cursor: Cursor = context.getContentResolver().query(uri, projection, null, null, null)
-//        if (cursor.count > 0) {
-//            while (cursor.moveToNext()) {
-//                val albumID = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Audio.AudioColumns.ALBUM_ID))
-//                val imgPath = Uri.parse("content://media/external/audio/albumart")
-//                val imgParse = ContentUris.withAppendedId(imgPath, albumID)
-//                tempList.add(
-//                    AudioModel(
-//                        cursor.getString(cursor.getColumnIndex(MediaStore.Audio.AudioColumns.TITLE)),
-//                        cursor.getString(cursor.getColumnIndex(MediaStore.Audio.Media.ARTIST)),
-//                        cursor.getString(cursor.getColumnIndex(MediaStore.Audio.Media._ID)),
-//                        cursor.getString(cursor.getColumnIndex(MediaStore.Audio.AudioColumns.DATA)),
-//                        cursor.getString(cursor.getColumnIndex(MediaStore.Audio.AudioColumns.DURATION)),
-//                        imgParse.toString()
-//                    )
-//                )
-//            }
-//            cursor.close()
-//        }
-//        return tempList
-//    }
+    @SuppressLint("Range")
+    fun dumpImageMetaData(uri: Uri) {
+        var contentResolver = applicationContext.contentResolver
+        // The query, because it only applies to a single document, returns only
+        // one row. There's no need to filter, sort, or select fields,
+        // because we want all fields for one document.
+        val cursor: Cursor? = contentResolver.query(
+            uri, null, null, null, null, null
+        )
+
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val displayName: String =
+                    it.getString(it.getColumnIndex(OpenableColumns.DISPLAY_NAME))
+                Log.i("TAG", "Display Name: $displayName")
+
+                val sizeIndex: Int = it.getColumnIndex(OpenableColumns.SIZE)
+                val size: String = if (!it.isNull(sizeIndex)) {
+                    it.getString(sizeIndex)
+                } else {
+                    "Unknown"
+                }
+                Log.i("TAG", "Size: $size")
+            }
+        }
+    }
 }
